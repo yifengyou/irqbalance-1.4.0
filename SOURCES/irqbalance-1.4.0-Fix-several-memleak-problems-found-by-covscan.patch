@@ -1,0 +1,253 @@
+From 9ed5c269bd59c95f41829aedf0520930c97b08d3 Mon Sep 17 00:00:00 2001
+From: Kairui Song <kasong@redhat.com>
+Date: Thu, 30 Aug 2018 17:45:53 +0800
+Subject: Fix several memleak problems found by covscan
+
+Some memleak issues is found by static analysis tools, and can confirm
+irqbalance is leaking memory slowly when there are incomming connection
+to socket.
+
+This patch could solve the memleak problem.
+---
+ irqbalance.c       | 16 ++++++++++++----
+ ui/irqbalance-ui.c | 31 +++++++++++++++++++++++++++----
+ ui/ui.c            |  2 ++
+ 3 files changed, 41 insertions(+), 8 deletions(-)
+
+diff --git a/irqbalance.c b/irqbalance.c
+index 6412447..4b3de54 100644
+--- a/irqbalance.c
++++ b/irqbalance.c
+@@ -385,11 +385,11 @@ gboolean sock_handle(gint fd, GIOCondition condition, gpointer user_data __attri
+ 		sock = accept(fd, NULL, NULL);
+ 		if (sock < 0) {
+ 			log(TO_ALL, LOG_WARNING, "Connection couldn't be accepted.\n");
+-			return TRUE;
++			goto out;
+ 		}
+ 		if ((recv_size = recvmsg(sock, &msg, 0)) < 0) {
+ 			log(TO_ALL, LOG_WARNING, "Error while receiving data.\n");
+-			return TRUE;
++			goto out;
+ 		}
+ 		cmsg = CMSG_FIRSTHDR(&msg);
+ 		if ((cmsg->cmsg_level == SOL_SOCKET) &&
+@@ -401,7 +401,7 @@ gboolean sock_handle(gint fd, GIOCondition condition, gpointer user_data __attri
+ 		}
+ 		if (!valid_user) {
+ 			log(TO_ALL, LOG_INFO, "Permission denied for user to connect to socket.\n");
+-			return TRUE;
++			goto out;
+ 		}
+ 
+ 		if (!strncmp(buff, "stats", strlen("stats"))) {
+@@ -421,6 +421,7 @@ gboolean sock_handle(gint fd, GIOCondition condition, gpointer user_data __attri
+ 				if (new_iterval >= 1) {
+ 					sleep_interval = new_iterval;
+ 				}
++				free(sleep_string);
+ 			} else if (!(strncmp(buff + strlen("settings "), "ban irqs ",
+ 							strlen("ban irqs ")))) {
+ 				char *end;
+@@ -432,12 +433,14 @@ gboolean sock_handle(gint fd, GIOCondition condition, gpointer user_data __attri
+ 				cl_banned_irqs = NULL;
+ 				need_rescan = 1;
+ 				if (!strncmp(irq_string, "NONE", strlen("NONE"))) {
+-					return TRUE;
++					free(irq_string);
++					goto out;
+ 				}
+ 				int irq = strtoul(irq_string, &end, 10);
+ 				do {
+ 					add_cl_banned_irq(irq);
+ 				} while((irq = strtoul(end, &end, 10)));
++				free(irq_string);
+ 			} else if (!(strncmp(buff + strlen("settings "), "cpus ",
+ 							strlen("cpus")))) {
+ 				char *cpu_ban_string = malloc(
+@@ -449,6 +452,7 @@ gboolean sock_handle(gint fd, GIOCondition condition, gpointer user_data __attri
+ 					banned_cpumask_from_ui = NULL;
+ 				}
+ 				need_rescan = 1;
++				free(cpu_ban_string);
+ 			}
+ 		}
+ 		if (!strncmp(buff, "setup", strlen("setup"))) {
+@@ -463,10 +467,14 @@ gboolean sock_handle(gint fd, GIOCondition condition, gpointer user_data __attri
+ 			snprintf(setup + strlen(setup), strlen(banned) + 7 + 1,
+ 					"BANNED %s", banned);
+ 			send(sock, setup, strlen(setup), 0);
++			free(setup);
+ 		}
+ 
+ 		close(sock);
+ 	}
++
++out:
++	free(msg.msg_control);
+ 	return TRUE;
+ }
+ 
+diff --git a/ui/irqbalance-ui.c b/ui/irqbalance-ui.c
+index 3fc46af..99f2ca2 100644
+--- a/ui/irqbalance-ui.c
++++ b/ui/irqbalance-ui.c
+@@ -41,6 +41,7 @@ struct msghdr * create_credentials_msg()
+ 	cmsg->cmsg_len = CMSG_LEN(sizeof(struct ucred));
+ 	memcpy(CMSG_DATA(cmsg), credentials, sizeof(struct ucred));
+ 
++	free(credentials);
+ 	return msg;
+ }
+ 
+@@ -87,6 +88,8 @@ void send_settings(char *data)
+ 	sendmsg(socket_fd, msg, 0);
+ 
+ 	close(socket_fd);
++	free(msg->msg_control);
++	free(msg);
+ }
+ 
+ char * get_data(char *string)
+@@ -115,6 +118,8 @@ char * get_data(char *string)
+ 	int len = recv(socket_fd, data, 8192, 0);
+ 	close(socket_fd);
+ 	data[len] = '\0';
++	free(msg->msg_control);
++	free(msg);
+ 	return data;
+ }
+ 
+@@ -123,6 +128,7 @@ void parse_setup(char *setup_data)
+ 	char *token, *ptr;
+ 	int i,j;
+ 	char *copy;
++	irq_t *new_irq = NULL;
+ 	if((setup_data == NULL) || (strlen(setup_data) == 0)) return;
+ 	copy = strdup(setup_data);
+ 	if (!copy)
+@@ -136,7 +142,7 @@ void parse_setup(char *setup_data)
+ 	token = strtok_r(NULL, " ", &ptr);
+ 	/* Parse banned IRQ data */
+ 	while(!strncmp(token, "IRQ", strlen("IRQ"))) {
+-		irq_t *new_irq = malloc(sizeof(irq_t));
++		new_irq = malloc(sizeof(irq_t));
+ 		new_irq->vector = strtol(strtok_r(NULL, " ", &ptr), NULL, 10);
+ 		token = strtok_r(NULL, " ", &ptr);
+ 		if(strncmp(token, "LOAD", strlen("LOAD"))) goto out;
+@@ -151,6 +157,7 @@ void parse_setup(char *setup_data)
+ 		new_irq->assigned_to = NULL;
+ 		setup.banned_irqs = g_list_append(setup.banned_irqs, new_irq);
+ 		token = strtok_r(NULL, " ", &ptr);
++		new_irq = NULL;
+ 	}
+ 
+ 	if(strncmp(token, "BANNED", strlen("BANNED"))) goto out;
+@@ -165,6 +172,7 @@ void parse_setup(char *setup_data)
+ 								banned_cpu);
+ 			}
+ 		}
++		free(map);
+ 	
+ 	}
+ 	free(copy);
+@@ -173,6 +181,9 @@ void parse_setup(char *setup_data)
+ out: {
+ 	/* Invalid data presented */
+ 	printf("Invalid data sent.  Unexpected token: %s", token);
++	if (new_irq) {
++		free(new_irq);
++	}
+ 	free(copy);
+ 	g_list_free(tree);
+ 	exit(1);
+@@ -240,7 +251,9 @@ void parse_into_tree(char *data)
+ 	cpu_node_t *parent = NULL;
+ 	char *copy;
+ 	tree = NULL;
+-	
++	irq_t *new_irq = NULL;
++	cpu_node_t *new = NULL;
++
+ 	if (!data || strlen(data) == 0)
+ 		return;
+ 
+@@ -255,7 +268,7 @@ void parse_into_tree(char *data)
+ 			free(copy);
+ 			 goto out;
+ 		}
+-		cpu_node_t *new = malloc(sizeof(cpu_node_t));
++		new = malloc(sizeof(cpu_node_t));
+ 		new->irqs = NULL;
+ 		new->children = NULL;
+ 		new->cpu_list = NULL;
+@@ -279,7 +292,7 @@ void parse_into_tree(char *data)
+ 
+ 		/* Parse assigned IRQ data */
+ 		while((token != NULL) && (!strncmp(token, "IRQ", strlen("IRQ")))) {
+-			irq_t *new_irq = malloc(sizeof(irq_t));
++			new_irq = malloc(sizeof(irq_t));
+ 			new_irq->vector = strtol(strtok_r(NULL, " ", &ptr), NULL, 10);
+ 			token = strtok_r(NULL, " ", &ptr);
+ 			if(strncmp(token, "LOAD", strlen("LOAD"))) goto out;
+@@ -293,6 +306,7 @@ void parse_into_tree(char *data)
+ 			new_irq->is_banned = 0;
+ 			new->irqs = g_list_append(new->irqs, new_irq);
+ 			token = strtok_r(NULL, " ", &ptr);
++			new_irq = NULL;
+ 		}
+ 
+ 		if((token == NULL) || (strncmp(token, "IRQ", strlen("IRQ")))) {
+@@ -306,6 +320,8 @@ void parse_into_tree(char *data)
+ 				parent = new;
+ 			}
+ 		}
++
++		new = NULL;
+ 	}
+ 	free(copy);
+ 	for_each_node(tree, assign_cpu_lists, NULL);
+@@ -315,6 +331,12 @@ void parse_into_tree(char *data)
+ out: {
+ 	/* Invalid data presented */
+ 	printf("Invalid data sent.  Unexpected token: %s\n", token);
++	if (new_irq) {
++		free(new_irq);
++	}
++	if (new) {
++		free(new);
++	}
+ 	g_list_free(tree);
+ 	exit(1);
+ }
+@@ -330,6 +352,7 @@ gboolean rescan_tree(gpointer data __attribute__((unused)))
+ 		display_tree();
+ 	}
+ 	free(setup_data);
++	free(irqbalance_data);
+ 	return TRUE;
+ }
+ 
+diff --git a/ui/ui.c b/ui/ui.c
+index 4054f0e..06ec472 100644
+--- a/ui/ui.c
++++ b/ui/ui.c
+@@ -71,6 +71,7 @@ char * check_control_in_sleep_input(int max_len, int column_offest, int line_off
+ 			attrset(COLOR_PAIR(6));
+ 			break;
+ 		case 27:
++			free(input_to);
+ 			return NULL;
+ 		default:
+ 			input_to[iteration] = new;
+@@ -115,6 +116,7 @@ int get_valid_sleep_input(int column_offest)
+ 				input);
+ 			refresh();
+ 		}
++		free(input);
+ 	}
+ 
+ 	attrset(COLOR_PAIR(1));
+-- 
+2.17.1
+

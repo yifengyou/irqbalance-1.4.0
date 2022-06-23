@@ -1,0 +1,72 @@
+From 3eae2edd136540898f8e51546eedfb56729f938d Mon Sep 17 00:00:00 2001
+From: Xiao Liang <xiliang@redhat.com>
+Date: Thu, 18 Oct 2018 21:50:33 +0800
+Subject: procinterrupts: check xen-dyn-event more flexible
+
+In current /proc/interrupts, the 'xen-dyn-event' was split to 'xen-dyn    -event'.
+It causes interrupts not balanced inside xen guest.
+
+Below result is without this patch:
+ 70:         29          0          0          0   xen-dyn    -event     vif0-q0-tx
+ 71:        120          0          0          0   xen-dyn    -event     vif0-q0-rx
+ 72:     586350          0          0          0   xen-dyn    -event     vif0-q1-tx
+ 73:         44          0          0          0   xen-dyn    -event     vif0-q1-rx
+ 74:         19          0          0          0   xen-dyn    -event     vif0-q2-tx
+ 75:        179          0          0          0   xen-dyn    -event     vif0-q2-rx
+ 76:         67          0          0          0   xen-dyn    -event     vif0-q3-tx
+ 77:     299637          0          0          0   xen-dyn    -event     vif0-q3-rx
+
+Below result is with this patch:
+[root@dhcp-3-194 ~]# grep vif0 /proc/interrupts
+ 70:         30          0          0          0   xen-dyn    -event     vif0-q0-tx
+ 71:        305          0         11          0   xen-dyn    -event     vif0-q0-rx
+ 72:     586354          0         27          0   xen-dyn    -event     vif0-q1-tx
+ 73:         49          7          5          0   xen-dyn    -event     vif0-q1-rx
+ 74:         27          0          0     509373   xen-dyn    -event     vif0-q2-tx
+ 75:        420          0          5          0   xen-dyn    -event     vif0-q2-rx
+ 76:        179          0         38          0   xen-dyn    -event     vif0-q3-tx
+ 77:     299803     281433          0          0   xen-dyn    -event     vif0-q3-rx
+
+Signed-off-by: Xiao Liang <xiliang@redhat.com>
+---
+ procinterrupts.c | 7 ++++++-
+ 1 file changed, 6 insertions(+), 1 deletion(-)
+
+diff --git a/procinterrupts.c b/procinterrupts.c
+index eb84a1c..ca9533b 100644
+--- a/procinterrupts.c
++++ b/procinterrupts.c
+@@ -167,6 +167,7 @@ GList* collect_full_irq_list()
+ 
+ 	while (!feof(file)) {
+ 		int	 number;
++		int      is_xen_dyn = 0;
+ 		struct irq_info *info;
+ 		char *c;
+ 		char savedline[1024];
+@@ -187,9 +188,13 @@ GList* collect_full_irq_list()
+ 
+ 		strncpy(savedline, line, sizeof(savedline));
+ 		irq_name = strtok_r(savedline, " ", &savedptr);
++		if (strstr(irq_name, "xen-dyn") != NULL)
++			is_xen_dyn = 1;
+ 		last_token = strtok_r(NULL, " ", &savedptr);
+ 		while ((p = strtok_r(NULL, " ", &savedptr))) {
+ 			irq_name = last_token;
++			if (strstr(irq_name, "xen-dyn") != NULL)
++				is_xen_dyn = 1;
+ 			last_token = p;
+ 		}
+ 
+@@ -209,7 +214,7 @@ GList* collect_full_irq_list()
+ 		info = calloc(sizeof(struct irq_info), 1);
+ 		if (info) {
+ 			info->irq = number;
+-			if (strstr(irq_name, "xen-dyn-event") != NULL) {
++			if (strstr(irq_name, "-event") != NULL && is_xen_dyn == 1) {
+ 				info->type = IRQ_TYPE_VIRT_EVENT;
+ 				info->class = IRQ_VIRT_EVENT;
+ 			} else {
+-- 
+2.17.1
+

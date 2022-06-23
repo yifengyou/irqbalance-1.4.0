@@ -1,0 +1,109 @@
+From 5f8ed87f36381569725c67445f12226f41861d1f Mon Sep 17 00:00:00 2001
+From: Kairui Song <kasong@redhat.com>
+Date: Fri, 9 Nov 2018 11:36:12 +0800
+Subject: [PATCH] Update document and remove dead options
+
+This is the stash of following three commits:
+
+commit ea743009f69ad4800c60bf26c776ef4944c6af8b
+Author: Kairui Song <kasong@redhat.com>
+Date:   Mon Mar 25 19:58:58 2019 +0800
+
+    Remove a duplicated word in manpage
+
+    Just noticed a warning in a manpage scan report, trivial but let's
+    fix it.
+
+    Signed-off-by: Kairui Song <kasong@redhat.com>
+
+commit 0b95593b19ff13e7e271d5b0b8219e7c70bf773c
+Author: Kairui Song <kasong@redhat.com>
+Date:   Fri Nov 9 12:26:29 2018 +0800
+
+    Update document for option --banmod and --deepestcache
+
+    '--banmod' is not documented, and '--deepestcache's alias '-c' is
+    missing.
+
+    Also fix an typo.
+
+    Signed-off-by: Kairui Song <kasong@redhat.com>
+
+commit 3ae01f5bd5ef3ed3080c9b06fc63bb02cc03bf1a
+Author: Kairui Song <kasong@redhat.com>
+Date:   Fri Nov 9 11:36:12 2018 +0800
+
+    Remove hintpolicy related options in help message
+
+    hintpolicy was dropped sometime ago so related help message should be
+    dropped as well.
+
+    Signed-off-by: Kairui Song <kasong@redhat.com>
+
+Signed-off-by: Kairui Song <kasong@redhat.com>
+---
+ irqbalance.1 | 15 ++++++++++++---
+ irqbalance.c |  3 +--
+ 2 files changed, 13 insertions(+), 5 deletions(-)
+
+diff --git a/irqbalance.1 b/irqbalance.1
+index 68e3cf8..61ae35e 100644
+--- a/irqbalance.1
++++ b/irqbalance.1
+@@ -62,12 +62,21 @@ in an effort to prevent that CPU from waking up without need.
+ .B -i, --banirq=<irqnum>
+ Add the specified IRQ to the set of banned IRQs. irqbalance will not affect
+ the affinity of any IRQs on the banned list, allowing them to be specified
+-manually.  This option is addative and can be specified multiple times. For
++manually.  This option is additive and can be specified multiple times. For
+ example to ban IRQs 43 and 44 from balancing, use the following command line:
+ .B irqbalance --banirq=43 --banirq=44
+ 
+ .TP
+-.B --deepestcache=<integer>
++.B -m, --banmod=<module_name>
++Add the specified module to the set of banned modules, similiar to --banirq.
++irqbalance will not affect the affinity of any IRQs of given modules, allowing
++them to be specified manually. This option is additive and can be specified
++multiple times. For example to ban all IRQs of module foo and module bar from
++balancing, use the following command line:
++.B irqbalance --banmod=foo --banmod=bar
++
++.TP
++.B -c, --deepestcache=<integer>
+ This allows a user to specify the cache level at which irqbalance partitions
+ cache domains.  Specifying a deeper cache may allow a greater degree of
+ flexibility for irqbalance to assign IRQ affinity to achieve greater performance
+@@ -148,7 +157,7 @@ each assigned IRQ type, it's number, load, number of IRQs since last rebalancing
+ and it's class are sent. Refer to types.h file for explanation of defines.
+ .TP
+ .B setup
+-Get the current value of sleep interval, mask of banned CPUs and and list of banned IRQs.
++Get the current value of sleep interval, mask of banned CPUs and list of banned IRQs.
+ .TP
+ .B settings sleep <s>
+ Set new value of sleep interval, <s> >= 1.
+diff --git a/irqbalance.c b/irqbalance.c
+index 6412447..7713cd0 100644
+--- a/irqbalance.c
++++ b/irqbalance.c
+@@ -84,7 +84,6 @@ struct option lopts[] = {
+ 	{"oneshot", 0, NULL, 'o'},
+ 	{"debug", 0, NULL, 'd'},
+ 	{"foreground", 0, NULL, 'f'},
+-	{"hintpolicy", 1, NULL, 'h'},
+ 	{"powerthresh", 1, NULL, 'p'},
+ 	{"banirq", 1 , NULL, 'i'},
+ 	{"banscript", 1, NULL, 'b'},
+@@ -100,7 +99,7 @@ struct option lopts[] = {
+ 
+ static void usage(void)
+ {
+-	log(TO_CONSOLE, LOG_INFO, "irqbalance [--oneshot | -o] [--debug | -d] [--foreground | -f] [--journal | -j] [--hintpolicy= | -h [exact|subset|ignore]]\n");
++	log(TO_CONSOLE, LOG_INFO, "irqbalance [--oneshot | -o] [--debug | -d] [--foreground | -f] [--journal | -j]\n");
+ 	log(TO_CONSOLE, LOG_INFO, "	[--powerthresh= | -p <off> | <n>] [--banirq= | -i <n>] [--banmod= | -m <module>] [--policyscript= | -l <script>]\n");
+ 	log(TO_CONSOLE, LOG_INFO, "	[--pid= | -s <file>] [--deepestcache= | -c <n>] [--interval= | -t <n>]\n");
+ }
+-- 
+2.20.1
+

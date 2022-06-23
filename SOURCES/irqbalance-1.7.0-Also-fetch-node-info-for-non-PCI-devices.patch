@@ -1,0 +1,30 @@
+From a1f83a563475bd77843c4b44ee44a7d764bc9bba Mon Sep 17 00:00:00 2001
+From: Kairui Song <kasong@redhat.com>
+Date: Thu, 28 Jan 2021 15:24:32 +0800
+Subject: [PATCH] Also fetch node info for non-PCI devices
+
+non-PCI devices could also be bind to a certain node. So if failed to
+fetch the info from sysfs, try to get it from /proc/irq/<irq>/node.
+---
+ classify.c | 5 ++++-
+ 1 file changed, 4 insertions(+), 1 deletion(-)
+
+diff --git a/classify.c b/classify.c
+index df8a89b..92f43cc 100644
+--- a/classify.c
++++ b/classify.c
+@@ -395,7 +395,10 @@ static struct irq_info *add_one_irq_to_db(const char *devpath, int irq, struct u
+ get_numa_node:
+ 	numa_node = -1;
+ 	if (numa_avail) {
+-		sprintf(path, "%s/numa_node", devpath);
++		if (devpath)
++			sprintf(path, "%s/numa_node", devpath);
++		else
++			sprintf(path, "/proc/irq/%i/node", irq);
+ 		fd = fopen(path, "r");
+ 		if (fd) {
+ 			fscanf(fd, "%d", &numa_node);
+-- 
+2.29.2
+

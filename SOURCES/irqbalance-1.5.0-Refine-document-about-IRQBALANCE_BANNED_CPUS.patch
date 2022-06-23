@@ -1,0 +1,31 @@
+From a1abba7b070587cc5fa69597081dcc80f4addef3 Mon Sep 17 00:00:00 2001
+From: Kairui Song <kasong@redhat.com>
+Date: Tue, 26 Feb 2019 16:26:51 +0800
+Subject: [PATCH] Refine document about IRQBALANCE_BANNED_CPUS
+
+There is no declaration about how irqbalance deal with isolated CPUs or
+adaptive-ticks CPUs, and how IRQBALANCE_BANNED_CPUS will override the
+behavior of auto-banning of such CPUs. Refine the document to avoid
+confusion.
+
+Signed-off-by: Kairui Song <kasong@redhat.com>
+---
+ irqbalance.1 | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/irqbalance.1 b/irqbalance.1
+index 11eb498..d272b6f 100644
+--- a/irqbalance.1
++++ b/irqbalance.1
+@@ -155,6 +155,8 @@ Same as --debug.
+ .TP
+ .B IRQBALANCE_BANNED_CPUS
+ Provides a mask of CPUs which irqbalance should ignore and never assign interrupts to.
++If not specified, irqbalance use mask of isolated and adaptive-ticks CPUs on the
++system as the default value.
+ 
+ .SH "SIGNALS"
+ .TP
+-- 
+2.28.0
+
